@@ -45,23 +45,11 @@ FROM jupyterhub/jupyterhub:latest
 
 # Install system dependencies
 USER root
-RUN apt-get update && apt-get install -y npm openjdk-11-jdk wget \
+RUN apt-get update && apt-get install -y npm git wget \
     && rm -rf /var/lib/apt/lists/*
 
 # Install configurable-http-proxy
 RUN pip install configurable-http-proxy
-#npm cache clean --force && npm install -g configurable-http-proxy
-
-# Install PySpark
-ENV SPARK_VERSION=3.5.1
-ENV HADOOP_VERSION=3
-RUN wget -qO- "https://downloads.apache.org/spark/spark-3.5.1/spark-3.5.1-bin-hadoop3.tgz" | \
-    tar xvz -C /opt/ && \
-    ln -s "/opt/spark-\${SPARK_VERSION}-bin-hadoop\${HADOOP_VERSION}" /opt/spark
-
-# Set environment variables for Spark
-ENV SPARK_HOME=/opt/spark
-ENV PATH=\$SPARK_HOME/bin:\$PATH
 
 # Switch back to jovyan user
 RUN useradd -ms /bin/bash ${DOCKER_USER}
