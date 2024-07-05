@@ -45,7 +45,7 @@ FROM jupyterhub/jupyterhub:latest
 
 # Install system dependencies
 USER root
-RUN apt-get update && apt-get install -y npm openjdk-11-jdk wget \
+RUN apt-get update && apt-get install -y npm openjdk-11-jdk wget git \
     && rm -rf /var/lib/apt/lists/*
 
 # Install configurable-http-proxy
