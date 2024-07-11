@@ -11,9 +11,9 @@ help () {
   echo ""
   echo -e "  help         : Print this message"
   echo -e "  setup        : Setup docker image"
-  echo -e "  start [path] : Start JupyterHub Instance at provided directory."
+  echo -e "  start [path] : Start JupyterLab Instance at provided directory."
   echo -e "                 Default is current working directory"
-  echo -e "  stop         : Stop JupyterHub Instance"
+  echo -e "  stop         : Stop JupyterLab Instance"
   echo ""
   exit 0
 }
@@ -48,69 +48,52 @@ USER root
 RUN apt-get update && apt-get install -y npm git wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Install configurable-http-proxy
-RUN pip install configurable-http-proxy
-
-# Switch back to jovyan user
-RUN useradd -ms /bin/bash ${DOCKER_USER}
-USER ${DOCKER_USER}
-
-WORKDIR /home/${DOCKER_USER}/
-
-# Install Python packages from requirements.txt
+# Install basic packages
+RUN pip install configurable-http-proxy jupyterlab
 RUN python3 -m pip install --upgrade pip 
 
-# Installing basic libraries
-RUN pip install jupyterhub jupyter_server jupyterlab
+# Switch back to user
+RUN useradd -ms /bin/bash ${DOCKER_USER}
+USER ${DOCKER_USER}
+ENV PATH="$PATH:/home/${DOCKER_USER}/.local/bin"
+WORKDIR /home/${DOCKER_USER}/
+RUN mkdir "/home/${DOCKER_USER}/workspace"
 
 # Copy the entrypoint script into the container
-COPY --chown=${DOCKER_USER}:users requirements.txt ./
+COPY requirements.txt ./
 
 # Installing from requirements.txt
 RUN pip install -r requirements.txt
 
-# Copy the entrypoint script into the container
-COPY --chown=${DOCKER_USER}:users entrypoint.sh /home/${DOCKER_USER}/.entrypoint.sh
+# Generate Jupyter configuration file
+RUN jupyter-lab --generate-config
 
-RUN chmod +x /home/${DOCKER_USER}/.entrypoint.sh
+# Disable authentication token
+RUN echo "c.IdentityProvider.token = ''" >> ~/.jupyter/jupyter_lab_config.py
+RUN echo "c.ServerApp.password = ''" >> ~/.jupyter/jupyter_lab_config.py
+RUN echo "c.ServerApp.root_dir = '/home/${DOCKER_USER}/workspace'" >>  ~/.jupyter/jupyter_lab_config.py
+RUN echo "c.ServerApp.ip = '0.0.0.0'" >> ~/.jupyter/jupyter_lab_config.py
+RUN echo "c.ServerApp.port = 8888" >> ~/.jupyter/jupyter_lab_config.py
+RUN echo "c.ServerApp.open_browser = False" >> ~/.jupyter/jupyter_lab_config.py
+RUN echo "c.ServerApp.allow_root = True" >> ~/.jupyter/jupyter_lab_config.py
 
-# Expose the JupyterHub port
-EXPOSE 8000
+EXPOSE 8888
 
-# Set the entrypoint to the script
-ENTRYPOINT ["/home/${DOCKER_USER}/.entrypoint.sh"]
-
-EOF
-}
-# Creating entrypoint script
-create_entrypoint_script() {
-  local DOCKER_USER=$1
-  cat << EOF > ./entrypoint.sh 
-#!/bin/bash
-
-echo "c = get_config()" > /srv/jupyterhub/jupyterhub_config.py
-echo "c.JupyterHub.bind_url = 'http://0.0.0.0:8000'" >> /srv/jupyterhub/jupyterhub_config.py
-echo "c.JupyterHub.base_url = '/'" >> /srv/jupyterhub/jupyterhub_config.py
-echo "c.JupyterHub.authenticator_class = 'dummy'" >> /srv/jupyterhub/jupyterhub_config.py
-echo "c.DummyAuthenticator.password = ''" >> /srv/jupyterhub/jupyterhub_config.py
-echo "c.JupyterHub.allow_named_servers = True" >> /srv/jupyterhub/jupyterhub_config.py
-echo "c.Authenticator.allow_all = True" >> /srv/jupyterhub/jupyterhub_config.py
-echo "c.Spawner.notebook_dir = '/home/${DOCKER_USER}/notebooks'" >> /srv/jupyterhub/jupyterhub_config.py
-
-# Start JupyterHub
-jupyterhub --config=/srv/jupyterhub/jupyterhub_config.py >> /srv/jupyterhub/jupyterhub_config.py
+# Start JupyterLab by default
+CMD ["jupyter", "lab", "--config=~/.jupyter/jupyter_lab_config.py"]
 
 EOF
 }
+
 # Setting up docker image
 setup_docker_image() {
   local DOCKER_USER=$1
   local DOCKER_IMAGE_NAME=$2
   create_dockerfile "${DOCKER_USER}"
-  create_entrypoint_script "${DOCKER_USER}"
+  
   # Building docker image
   docker build -t "${DOCKER_IMAGE_NAME}" .
-  rm ./Dockerfile ./entrypoint.sh
+  rm ./Dockerfile
 }
 # Starting docker
 start_jupyterhub_docker () {
@@ -120,9 +103,8 @@ start_jupyterhub_docker () {
   local WORKDIR=$4
   stop_remove_containers "$DOCKER_IMAGE_NAME"
   docker run -d \
-      -v "${WORKING_DIR}:/home/${DOCKER_USER}/notebooks" \
-      -p 8000:8000 \
-      --user root \
+      -v "${WORKING_DIR}:/home/${DOCKER_USER}/workspace" \
+      -p 8888:8888 \
       --name "${DOCKER_CONTAINER_NAME}" \
       "${DOCKER_IMAGE_NAME}"
 
@@ -132,15 +114,13 @@ start_jupyterhub_docker () {
     exit 1
   fi
 }
+
 # Printing information after starting juppyterhub docker
 print_start_info() {
   local DOCKER_USER=$1
   logger "info" "In your browser, go to following web address to start working"
-  logger "info" "  http://0.0.0.0:8000"
+  logger "info" "  http://0.0.0.0:8888"
   logger "info" ""
-  logger "info" "Use following information at the login screen:"
-  logger "info" "  Username: ${DOCKER_USER}"
-  logger "info" "  No password. Keep it blank."
 }
 # Main function
 main () {
